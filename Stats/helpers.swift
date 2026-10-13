@@ -112,6 +112,7 @@ extension AppDelegate {
             let dockIconStatus = Store.shared.bool(key: "dockIcon", defaultValue: false) ? NSApplication.ActivationPolicy.regular : NSApplication.ActivationPolicy.accessory
             NSApp.setActivationPolicy(dockIconStatus)
         }
+        DockLive.shared.reload()
         
         self.checkIfShouldShowSupportWindow()
         self.supportActivity.interval = 60 * 60 * 24 * 30

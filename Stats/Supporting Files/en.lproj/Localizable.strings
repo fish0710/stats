@@ -158,6 +158,7 @@
 "Never" = "Never";
 "Check for update" = "Check for update";
 "Show icon in dock" = "Show icon in dock";
+"Live data in dock" = "Live data in dock";
 "Start at login" = "Start at login";
 "Build number" = "Build number";
 "Import settings" = "Import settings";

@@ -253,6 +253,7 @@ public class Network: Module {
         self.portalView.usageCallback(value)
         self.notificationsView.usageCallback(value)
         self.previewView.usageCallback(value)
+        DockLive.shared.setNetwork(up: value.bandwidth.upload, down: value.bandwidth.download)
         
         var upload: Int64 = value.bandwidth.upload
         var download: Int64 = value.bandwidth.download

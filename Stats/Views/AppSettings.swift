@@ -61,6 +61,8 @@ class ApplicationSettings: NSStackView {
     
     private var updateSelector: NSPopUpButton?
     private var startAtLoginBtn: NSSwitch?
+    private var dockBtn: NSSwitch?
+    private var dockLiveBtn: NSSwitch?
     private var remoteControlBtn: NSSwitch?
     private var remoteUpdatesBtn: NSSwitch?
     
@@ -103,6 +105,14 @@ class ApplicationSettings: NSStackView {
             items: AppUpdateIntervals,
             selected: self.updateIntervalValue
         )
+        self.dockBtn = switchView(
+            action: #selector(self.toggleDock),
+            state: Store.shared.bool(key: "dockIcon", defaultValue: false)
+        )
+        self.dockLiveBtn = switchView(
+            action: #selector(self.toggleDockLive),
+            state: Store.shared.bool(key: "dockLive", defaultValue: false)
+        )
         self.startAtLoginBtn = switchView(
             action: #selector(self.toggleLaunchAtLogin),
             state: LaunchAtLogin.isEnabled
@@ -115,10 +125,11 @@ class ApplicationSettings: NSStackView {
                 items: TemperatureUnits,
                 selected: self.temperatureUnitsValue
             )),
-            PreferencesRow(localizedString("Show icon in dock"), component: switchView(
-                action: #selector(self.toggleDock),
-                state: Store.shared.bool(key: "dockIcon", defaultValue: false)
-            )),
+            PreferencesRow(localizedString("Show icon in dock"), component: self.dockBtn!),
+            PreferencesRow(localizedString("Live data in dock"), component: self.dockLiveBtn!),
+            PreferencesRow(localizedString("Network"), component: self.dockLiveSwitch("dockLive_net")),
+            PreferencesRow(localizedString("CPU"), component: self.dockLiveSwitch("dockLive_cpu")),
+            PreferencesRow(localizedString("GPU"), component: self.dockLiveSwitch("dockLive_gpu")),
             PreferencesRow(localizedString("Start at login"), component: self.startAtLoginBtn!),
             PreferencesRow(localizedString("Keep the menubar items position"), component: switchView(
                 action: #selector(self.toggleMenuBarPosition),
@@ -368,6 +379,30 @@ class ApplicationSettings: NSStackView {
         if state == .off {
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
+        DockLive.shared.reload()
+    }
+    
+    @objc private func toggleDockLive(_ sender: NSButton) {
+        let on = sender.state == NSControl.StateValue.on
+        Store.shared.set(key: "dockLive", value: on)
+        if on && !Store.shared.bool(key: "dockIcon", defaultValue: false) {
+            self.dockBtn?.state = .on
+            Store.shared.set(key: "dockIcon", value: true)
+            NSApp.setActivationPolicy(.regular)
+        }
+        DockLive.shared.reload()
+    }
+    
+    private func dockLiveSwitch(_ key: String) -> NSSwitch {
+        let btn = switchView(action: #selector(self.toggleDockLiveItem), state: Store.shared.bool(key: key, defaultValue: true))
+        btn.identifier = NSUserInterfaceItemIdentifier(key)
+        return btn
+    }
+    
+    @objc private func toggleDockLiveItem(_ sender: NSButton) {
+        guard let key = sender.identifier?.rawValue else { return }
+        Store.shared.set(key: key, value: sender.state == NSControl.StateValue.on)
+        DockLive.shared.reload()
     }
     
     @objc private func toggleLaunchAtLogin(_ sender: NSButton) {

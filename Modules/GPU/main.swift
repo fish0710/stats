@@ -182,6 +182,7 @@ public class GPU: Module {
         self.portalView.callback(selectedGPU)
         self.notificationsView.usageCallback(utilization)
         self.previewView.loadCallback(selectedGPU)
+        DockLive.shared.setGPU(utilization)
         
         self.menuBar.widgets.filter{ $0.isActive }.forEach { (w: SWidget) in
             switch w.item {
