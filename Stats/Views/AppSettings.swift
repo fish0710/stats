@@ -129,7 +129,7 @@ class ApplicationSettings: NSStackView {
             PreferencesRow(localizedString("Live data in dock"), component: self.dockLiveBtn!),
             PreferencesRow(localizedString("Network"), component: self.dockLiveSwitch("dockLive_net")),
             PreferencesRow(localizedString("CPU"), component: self.dockLiveSwitch("dockLive_cpu")),
-            PreferencesRow(localizedString("GPU"), component: self.dockLiveSwitch("dockLive_gpu")),
+            PreferencesRow(localizedString("GPU"), component: self.dockLiveSwitch("dockLive_gpu", defaultValue: false)),
             PreferencesRow(localizedString("Start at login"), component: self.startAtLoginBtn!),
             PreferencesRow(localizedString("Keep the menubar items position"), component: switchView(
                 action: #selector(self.toggleMenuBarPosition),
@@ -393,8 +393,8 @@ class ApplicationSettings: NSStackView {
         DockLive.shared.reload()
     }
     
-    private func dockLiveSwitch(_ key: String) -> NSSwitch {
-        let btn = switchView(action: #selector(self.toggleDockLiveItem), state: Store.shared.bool(key: key, defaultValue: true))
+    private func dockLiveSwitch(_ key: String, defaultValue: Bool = true) -> NSSwitch {
+        let btn = switchView(action: #selector(self.toggleDockLiveItem), state: Store.shared.bool(key: key, defaultValue: defaultValue))
         btn.identifier = NSUserInterfaceItemIdentifier(key)
         return btn
     }

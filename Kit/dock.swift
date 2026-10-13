@@ -38,7 +38,7 @@ public final class DockLive {
             self.active = store.bool(key: "dockIcon", defaultValue: false) && store.bool(key: "dockLive", defaultValue: false)
             self.showNet = store.bool(key: "dockLive_net", defaultValue: true)
             self.showCPU = store.bool(key: "dockLive_cpu", defaultValue: true)
-            self.showGPU = store.bool(key: "dockLive_gpu", defaultValue: true)
+            self.showGPU = store.bool(key: "dockLive_gpu", defaultValue: false)
 
             let tile = NSApp.dockTile
             if self.active {
@@ -112,13 +112,17 @@ public final class DockLive {
     }
 
     private static func speed(_ bytes: Int64) -> (value: String, unit: String) {
-        let (value, unit) = Units(bytes: bytes).getReadableTuple()
+        var (value, unit) = Units(bytes: bytes).getReadableTuple()
+        if value.contains("."), let number = Double(value), number >= 10 {
+            value = "\(Int(number.rounded()))"
+        }
         return (value, String(unit.prefix(1)))
     }
 }
 
 private final class DockLiveView: NSView {
     typealias Speed = (value: String, unit: String)
+    typealias Gauge = (title: String, value: Double)
 
     var network: (up: Speed, down: Speed)? = nil
     var cpu: Double? = nil
@@ -129,8 +133,8 @@ private final class DockLiveView: NSView {
 
     private let upColor = NSColor(srgbRed: 0.93, green: 0.34, blue: 0.27, alpha: 1)
     private let downColor = NSColor(srgbRed: 0.24, green: 0.53, blue: 0.98, alpha: 1)
-    private let secondary = NSColor(white: 1, alpha: 0.55)
-    private let track = NSColor(white: 1, alpha: 0.1)
+    private let secondary = NSColor(white: 1, alpha: 0.6)
+    private let track = NSColor(white: 1, alpha: 0.12)
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
@@ -140,7 +144,7 @@ private final class DockLiveView: NSView {
         context.scaleBy(x: scale, y: scale)
         defer { context.restoreGState() }
 
-        var gauges: [(String, Double)] = []
+        var gauges: [Gauge] = []
         if let cpu = self.cpu { gauges.append(("CPU", cpu)) }
         if let gpu = self.gpu { gauges.append(("GPU", gpu)) }
 
@@ -151,30 +155,43 @@ private final class DockLiveView: NSView {
 
         self.drawBackground(context)
 
-        let content = self.body.insetBy(dx: 8, dy: 8)
-        let netRow = NSRect(x: content.minX, y: content.minY + 1, width: content.width, height: 22)
+        let content = self.body.insetBy(dx: 7, dy: 7)
+        let row = NSRect(x: self.body.minX + 5, y: content.minY - 1, width: self.body.width - 10, height: 24)
+        let top = NSRect(x: content.minX, y: row.maxY + 3, width: content.width, height: content.maxY - row.maxY - 3)
+
         switch (gauges.count, self.network) {
         case (0, let net?):
             self.drawNetworkStack(net, in: content.insetBy(dx: 0, dy: 4))
         case (1, nil):
-            self.drawGauge(gauges[0], center: NSPoint(x: content.midX, y: content.midY + 2), radius: 32, number: 32)
-        case (2, nil):
-            self.drawGaugePair(gauges, y: content.midY + 2, in: content)
+            self.drawGauge(gauges[0], center: NSPoint(x: content.midX, y: content.midY + 2), radius: 32, line: 11, number: 38)
+        case (_, nil):
+            self.drawGaugeWithSide(gauges[0], gauges[1], in: content.insetBy(dx: 0, dy: 10))
         case (1, let net?):
-            self.drawGauge(gauges[0], center: NSPoint(x: content.midX, y: content.maxY - 27), radius: 25, number: 26)
-            self.drawNetworkRow(net, in: netRow)
+            self.drawGauge(gauges[0], center: NSPoint(x: top.midX, y: top.midY + 2), radius: 25, line: 10, number: 30)
+            self.drawNetworkRow(net, in: row)
         case (_, let net?):
-            self.drawGaugePair(gauges, y: content.maxY - 24, in: content)
-            self.drawNetworkRow(net, in: netRow)
-        default:
-            break
+            self.drawGaugeWithSide(gauges[0], gauges[1], in: top)
+            self.drawNetworkRow(net, in: row)
         }
     }
 
-    private func drawGaugePair(_ gauges: [(String, Double)], y: CGFloat, in frame: NSRect) {
-        let offset: CGFloat = 22
-        self.drawGauge(gauges[0], center: NSPoint(x: frame.midX - offset, y: y), radius: 17.5, number: 18)
-        self.drawGauge(gauges[1], center: NSPoint(x: frame.midX + offset, y: y), radius: 17.5, number: 18)
+    private func drawGaugeWithSide(_ main: Gauge, _ side: Gauge, in frame: NSRect) {
+        let line: CGFloat = 9.5
+        let radius = min(frame.height, 60) / 2 - line / 2
+        let center = NSPoint(x: frame.minX + radius + line / 2, y: frame.midY + 2)
+        self.drawGauge(main, center: center, radius: radius, line: line, number: radius * 1.15)
+
+        let column = NSRect(x: center.x + radius + line / 2 + 2, y: frame.minY, width: frame.maxX - center.x - radius - line / 2 - 2, height: frame.height)
+        let value = min(max(side.value, 0), 1)
+        let label = NSAttributedString(string: side.title, attributes: [
+            .font: self.font(13, .bold),
+            .foregroundColor: self.secondary
+        ])
+        let number = self.fitted("\(Int((value*100).rounded()))", size: 24, width: column.width, color: self.color(value))
+        let lsize = label.size(), nsize = number.size()
+        let y = center.y - (lsize.height + nsize.height - 4) / 2
+        number.draw(at: NSPoint(x: column.midX - nsize.width/2, y: y))
+        label.draw(at: NSPoint(x: column.midX - lsize.width/2, y: y + nsize.height - 4))
     }
 
     private func squircle(_ rect: NSRect) -> NSBezierPath {
@@ -231,14 +248,13 @@ private final class DockLiveView: NSView {
         shape.stroke()
     }
 
-    private func drawGauge(_ gauge: (title: String, value: Double), center: NSPoint, radius: CGFloat, number: CGFloat) {
+    private func drawGauge(_ gauge: Gauge, center: NSPoint, radius: CGFloat, line: CGFloat, number: CGFloat) {
         let value = min(max(gauge.value, 0), 1)
-        let width = max(4, radius * 0.19)
-        let start: CGFloat = 225, sweep: CGFloat = 270
+        let start: CGFloat = 210, sweep: CGFloat = 240
 
         let trackPath = NSBezierPath()
         trackPath.appendArc(withCenter: center, radius: radius, startAngle: start, endAngle: start - sweep, clockwise: true)
-        trackPath.lineWidth = width
+        trackPath.lineWidth = line
         trackPath.lineCapStyle = .round
         self.track.setStroke()
         trackPath.stroke()
@@ -246,80 +262,111 @@ private final class DockLiveView: NSView {
         if value > 0.005 {
             let arc = NSBezierPath()
             arc.appendArc(withCenter: center, radius: radius, startAngle: start, endAngle: start - sweep * CGFloat(value), clockwise: true)
-            arc.lineWidth = width
+            arc.lineWidth = line
             arc.lineCapStyle = .round
             self.color(value).setStroke()
             arc.stroke()
         }
 
-        let digits = "\(Int((value*100).rounded()))"
-        var number = number
-        var text: NSAttributedString
-        repeat {
-            text = NSAttributedString(string: digits, attributes: [.font: self.font(number, .bold), .foregroundColor: NSColor.white])
-            number -= 0.5
-        } while text.size().width > radius * 1.5 && number > 11
+        let inner = (radius - line / 2) * 2 - 4
+        let text = self.fitted("\(Int((value*100).rounded()))", size: number, width: inner, color: .white)
         let size = text.size()
-        text.draw(at: NSPoint(x: center.x - size.width/2, y: center.y - size.height/2 + 1))
+        text.draw(at: NSPoint(x: center.x - size.width/2, y: center.y - size.height/2 + radius * 0.12))
 
         let label = NSAttributedString(string: gauge.title, attributes: [
-            .font: self.font(11, .bold),
-            .foregroundColor: self.secondary,
-            .kern: 0.4
+            .font: self.font(13, .bold),
+            .foregroundColor: self.secondary
         ])
         let lsize = label.size()
-        label.draw(at: NSPoint(x: center.x - lsize.width/2, y: center.y - radius - lsize.height/2 + 1))
+        label.draw(at: NSPoint(x: center.x - lsize.width/2, y: center.y - radius * 0.86 - lsize.height/2))
     }
 
     private func drawNetworkRow(_ net: (up: Speed, down: Speed), in frame: NSRect) {
-        let column = frame.width / 2 - 3
-        let size = min(self.fit(net.up, size: 17, width: column), self.fit(net.down, size: 17, width: column))
-        self.drawSpeed(net.up, arrow: "↑", color: self.upColor, size: size, in: NSRect(x: frame.minX, y: frame.minY, width: column, height: frame.height))
-        self.drawSpeed(net.down, arrow: "↓", color: self.downColor, size: size, in: NSRect(x: frame.maxX - column, y: frame.minY, width: column, height: frame.height))
-
-        NSColor(white: 1, alpha: 0.08).setFill()
-        NSRect(x: frame.minX + 6, y: frame.maxY + 3, width: frame.width - 12, height: 1).fill()
+        let gap: CGFloat = 7
+        var size: CGFloat = 20
+        while size > 13 && self.speedWidth(net.up, size: size) + self.speedWidth(net.down, size: size) + gap > frame.width {
+            size -= 0.5
+        }
+        let up = self.speedWidth(net.up, size: size), down = self.speedWidth(net.down, size: size)
+        let x = frame.midX - (up + gap + down) / 2
+        self.drawSpeed(net.up, up: true, size: size, in: NSRect(x: x, y: frame.minY, width: up, height: frame.height))
+        self.drawSpeed(net.down, up: false, size: size, in: NSRect(x: x + up + gap, y: frame.minY, width: down, height: frame.height))
     }
 
     private func drawNetworkStack(_ net: (up: Speed, down: Speed), in frame: NSRect) {
         let h = frame.height / 2
-        self.drawSpeed(net.up, arrow: "↑", color: self.upColor, size: 26, in: NSRect(x: frame.minX, y: frame.midY, width: frame.width, height: h))
-        self.drawSpeed(net.down, arrow: "↓", color: self.downColor, size: 26, in: NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: h))
+        self.drawSpeed(net.up, up: true, size: 28, in: NSRect(x: frame.minX, y: frame.midY + 1, width: frame.width, height: h))
+        self.drawSpeed(net.down, up: false, size: 28, in: NSRect(x: frame.minX, y: frame.minY - 1, width: frame.width, height: h))
 
-        let axis = NSRect(x: frame.minX + 4, y: frame.midY - 0.75, width: frame.width - 8, height: 1.5)
-        self.upColor.withAlphaComponent(0.8).setFill()
+        let axis = NSRect(x: frame.minX + 4, y: frame.midY - 1, width: frame.width - 8, height: 2)
+        self.upColor.setFill()
         NSRect(x: axis.minX, y: axis.midY, width: axis.width, height: axis.height/2).fill()
-        self.downColor.withAlphaComponent(0.8).setFill()
+        self.downColor.setFill()
         NSRect(x: axis.minX, y: axis.minY, width: axis.width, height: axis.height/2).fill()
     }
 
     private func fit(_ speed: Speed, size: CGFloat, width: CGFloat) -> CGFloat {
         var size = size
-        while size > 12 && self.speedText(speed, arrow: "↑", color: .white, size: size).size().width > width {
+        while size > 13 && self.speedWidth(speed, size: size) > width + 0.01 {
             size -= 0.5
         }
         return size
     }
 
-    private func drawSpeed(_ speed: Speed, arrow: String, color: NSColor, size: CGFloat, in frame: NSRect) {
-        let text = self.speedText(speed, arrow: arrow, color: color, size: self.fit(speed, size: size, width: frame.width))
-        let s = text.size()
-        text.draw(at: NSPoint(x: frame.midX - s.width/2, y: frame.midY - s.height/2))
+    private func speedWidth(_ speed: Speed, size: CGFloat) -> CGFloat {
+        return self.arrowWidth(size) + self.speedText(speed, size: size).size().width
     }
 
-    private func speedText(_ speed: Speed, arrow: String, color: NSColor, size: CGFloat) -> NSAttributedString {
-        let text = NSMutableAttributedString(string: arrow, attributes: [
-            .font: self.font(size * 0.8, .heavy),
-            .foregroundColor: color
-        ])
-        text.append(NSAttributedString(string: speed.value, attributes: [
+    private func arrowWidth(_ size: CGFloat) -> CGFloat {
+        return size * 0.45 + 2
+    }
+
+    private func drawSpeed(_ speed: Speed, up: Bool, size: CGFloat, in frame: NSRect) {
+        let size = self.fit(speed, size: size, width: frame.width)
+        let text = self.speedText(speed, size: size)
+        let s = text.size()
+        let x = frame.midX - (self.arrowWidth(size) + s.width) / 2
+        let y = frame.midY - s.height / 2
+        text.draw(at: NSPoint(x: x + self.arrowWidth(size), y: y))
+
+        let font = self.font(size, .bold)
+        let w = size * 0.45, h = font.capHeight
+        let base = y - font.descender
+        let arrow = NSBezierPath()
+        if up {
+            arrow.move(to: NSPoint(x: x, y: base))
+            arrow.line(to: NSPoint(x: x + w, y: base))
+            arrow.line(to: NSPoint(x: x + w/2, y: base + h))
+        } else {
+            arrow.move(to: NSPoint(x: x, y: base + h))
+            arrow.line(to: NSPoint(x: x + w, y: base + h))
+            arrow.line(to: NSPoint(x: x + w/2, y: base))
+        }
+        arrow.close()
+        (up ? self.upColor : self.downColor).setFill()
+        arrow.fill()
+    }
+
+    private func speedText(_ speed: Speed, size: CGFloat) -> NSAttributedString {
+        let text = NSMutableAttributedString(string: speed.value, attributes: [
             .font: self.font(size, .bold),
-            .foregroundColor: NSColor.white
-        ]))
+            .foregroundColor: NSColor.white,
+            .kern: -0.3
+        ])
         text.append(NSAttributedString(string: speed.unit, attributes: [
-            .font: self.font(max(11, size * 0.62), .semibold),
+            .font: self.font(max(13, size * 0.65), .bold),
             .foregroundColor: self.secondary
         ]))
+        return text
+    }
+
+    private func fitted(_ string: String, size: CGFloat, width: CGFloat, color: NSColor) -> NSAttributedString {
+        var size = size
+        var text: NSAttributedString
+        repeat {
+            text = NSAttributedString(string: string, attributes: [.font: self.font(size, .bold), .foregroundColor: color, .kern: -0.5])
+            size -= 0.5
+        } while text.size().width > width && size > 13
         return text
     }
 
